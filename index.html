@@ -199,14 +199,14 @@ function computeHarmonics(budgetMs) {
     harmonicsReady++;
   }
 }
-// Sparkline of each zero's wave −2 Re li(x^ρ) on 2 ≤ x ≤ 100, stored as min/max per bin (scaled to its own peak),
+// Sparkline of each zero's wave −2 Re li(x^ρ) on 20 ≤ x ≤ 100, stored as min/max per bin (scaled to its own peak),
 // so fast oscillations draw as an envelope instead of aliasing.
 const SB = 200;
 const spark = new Float32Array(ZEROS.length * SB * 2);
 function computeSpark(k) {
-  const g = ZEROS[k], M = Math.min(16000, Math.max(800, Math.ceil(g * 0.62 * 12)));
+  const g = ZEROS[k], M = Math.min(16000, Math.max(800, Math.ceil(g * 0.26 * 12)));
   const vals = new Float32Array(M); let amp = 1e-12;
-  for (let j = 0; j < M; j++) { const L = Math.log(2 + 98 * j / (M - 1)), v = 2 * E1re(-0.5 * L, -g * L); vals[j] = v; amp = Math.max(amp, Math.abs(v)); }
+  for (let j = 0; j < M; j++) { const L = Math.log(20 + 80 * j / (M - 1)), v = 2 * E1re(-0.5 * L, -g * L); vals[j] = v; amp = Math.max(amp, Math.abs(v)); }
   const o = k * SB * 2;
   for (let b = 0; b < SB; b++) { spark[o + 2 * b] = Infinity; spark[o + 2 * b + 1] = -Infinity; }
   for (let j = 0; j < M; j++) {
