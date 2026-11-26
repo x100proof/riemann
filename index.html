@@ -195,7 +195,24 @@ function computeHarmonics(budgetMs) {
   while (harmonicsReady < ZEROS.length && performance.now() - t0 < budgetMs) {
     const k = harmonicsReady, g = ZEROS[k], off = (k + 1) * S, prev = k * S;
     for (let i = 0; i < S; i++) { let s = 0; for (const [c, L] of terms[i]) s += c * 2 * E1re(-0.5 * L, -g * L); cum[off + i] = cum[prev + i] + s; }
+    computeSpark(k);
     harmonicsReady++;
+  }
+}
+// Sparkline of each zero's wave −2 Re li(x^ρ) on 2 ≤ x ≤ 100, stored as min/max per bin (scaled to its own peak),
+// so fast oscillations draw as an envelope instead of aliasing.
+const SB = 200;
+const spark = new Float32Array(ZEROS.length * SB * 2);
+function computeSpark(k) {
+  const g = ZEROS[k], M = Math.min(16000, Math.max(800, Math.ceil(g * 0.62 * 12)));
+  const vals = new Float32Array(M); let amp = 1e-12;
+  for (let j = 0; j < M; j++) { const L = Math.log(2 + 98 * j / (M - 1)), v = 2 * E1re(-0.5 * L, -g * L); vals[j] = v; amp = Math.max(amp, Math.abs(v)); }
+  const o = k * SB * 2;
+  for (let b = 0; b < SB; b++) { spark[o + 2 * b] = Infinity; spark[o + 2 * b + 1] = -Infinity; }
+  for (let j = 0; j < M; j++) {
+    const b = Math.min(SB - 1, Math.floor(j * SB / M)), v = vals[j] / amp;
+    if (v < spark[o + 2 * b]) spark[o + 2 * b] = v;
+    if (v > spark[o + 2 * b + 1]) spark[o + 2 * b + 1] = v;
   }
 }
 
@@ -251,17 +268,33 @@ function drawInput(k) {
   ctx.setLineDash([]);
   ctx.strokeStyle = k.path; ctx.lineWidth = 3; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(X(sigma), Y(Math.max(0, tBot - 1))); ctx.lineTo(X(sigma), Y(tCur)); ctx.stroke();
-  // zeros (labels skipped where they would overlap)
-  ctx.font = `13px ${k.mono}`; ctx.textBaseline = 'middle';
+  // zeros: sparkline of the zero's wave to the right, label to the left (labels skipped where they would overlap).
+  // Each sparkline stays inside the band reaching halfway to its neighbouring zeros, so sparklines never overlap.
+  ctx.font = `12px ${k.mono}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  const pxPerT = (h - pad.t - pad.b) / T_WIN, sx0 = X(0.5) + 12, sx1 = w - pad.r - 4, bw = (sx1 - sx0) / (SB - 1);
   let lastLabelY = Infinity;
   for (let i = 0; i < hits && i < zeros.length; i++) {
-    const z = zeros[i], y = Y(z); if (y > h + 10) continue; if (y < pad.t - 10) break;
+    const z = zeros[i], y = Y(z); if (y > h + 40) continue; if (y < pad.t - 40) break;
     const a = reduce ? 1 : Math.min(1, (clock - hitAt[i]) / FADE);
+    if (i < harmonicsReady && sx1 - sx0 > 30) {
+      const gapUp = (i + 1 < zeros.length ? zeros[i + 1] - z : 3) * pxPerT, gapDown = (i > 0 ? z - zeros[i - 1] : z) * pxPerT;
+      const hh = Math.min(18, Math.min(gapUp, gapDown) / 2 - 1);
+      if (hh > 0.5) {
+        const o = i * SB * 2;
+        ctx.beginPath();
+        for (let b = 0; b < SB; b++) { const px = sx0 + b * bw, py = y - spark[o + 2 * b + 1] * hh; b ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+        for (let b = SB - 1; b >= 0; b--) ctx.lineTo(sx0 + b * bw, y - spark[o + 2 * b] * hh);
+        ctx.closePath();
+        ctx.globalAlpha = a * 0.3; ctx.fillStyle = k.zero; ctx.fill();
+        ctx.globalAlpha = a; ctx.strokeStyle = k.zero; ctx.lineWidth = 1; ctx.lineJoin = 'round'; ctx.stroke();
+      }
+    }
     ctx.globalAlpha = a;
     ctx.fillStyle = k.zero; ctx.beginPath(); ctx.arc(X(0.5), y, 5, 0, 2 * Math.PI); ctx.fill();
-    if (lastLabelY - y >= 15) { ctx.fillStyle = k.fg; ctx.fillText(`t = ${z.toFixed(3)}`, X(0.5) + 12, y); lastLabelY = y; }
+    if (lastLabelY - y >= 15) { ctx.fillStyle = k.fg; ctx.fillText(`t = ${z.toFixed(3)}`, X(0.5) - 10, y); lastLabelY = y; }
     ctx.globalAlpha = 1;
   }
+  ctx.textAlign = 'left';
   // moving head
   ctx.fillStyle = k.path; ctx.beginPath(); ctx.arc(X(sigma), Y(tCur), 5.5, 0, 2 * Math.PI); ctx.fill();
   ctx.restore();
