@@ -46,3 +46,7 @@ server {
 ```
 
 Add TLS (for example with Let's Encrypt) before serving it publicly.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
