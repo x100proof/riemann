@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ζ(½ + it)</title>
+<meta name="description" content="Watch the critical line s = ½ + it map through the Riemann zeta function, and see each zero appear as the output curve passes through the origin.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: title over two equal planes (input | output), stacked on phones. */
+:root {
+  --bg: #f5f6fa;
+  --panel: #ffffff;
+  --fg: #1a1f2e;
+  --muted: #6b7184;
+  --grid: #e2e5ee;
+  --axis: #a7adbf;
+  --strip: rgba(70, 110, 220, 0.07);
+  --path: #2f63d6;
+  --zero: #d1681e;
+  --font-display: "STIX Two Text", "Cambria Math", "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1120; --panel: #151a2c; --fg: #e6e9f3; --muted: #8a91a8;
+    --grid: #232a40; --axis: #48516d; --strip: rgba(110, 160, 255, 0.08);
+    --path: #79a6ff; --zero: #ffad5c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1120; --panel: #151a2c; --fg: #e6e9f3; --muted: #8a91a8;
+  --grid: #232a40; --axis: #48516d; --strip: rgba(110, 160, 255, 0.08);
+  --path: #79a6ff; --zero: #ffad5c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 28px;
+}
+main { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+h1 {
+  font-family: var(--font-display); font-weight: 400;
+  font-size: clamp(56px, 10vw, 112px); line-height: 1; margin: 0;
+  text-align: center; letter-spacing: 0.01em;
+}
+h1 i { font-style: italic; }
+.planes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .planes { grid-template-columns: 1fr; } }
+figure {
+  margin: 0; background: var(--panel); border: 1px solid var(--grid);
+  border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0;
+}
+figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.formula { font-family: var(--font-display); font-size: 18px; }
+canvas { width: 100%; aspect-ratio: 1 / 1; display: block; }
+.bar { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.readout { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 14px; color: var(--muted); min-width: 0; }
+.readout b { color: var(--fg); font-weight: 500; }
+input[type="range"] { accent-color: var(--path); width: 160px; }
+button {
+  font: 500 14px var(--font-body); color: var(--fg); background: var(--panel);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 6px 14px; cursor: pointer;
+}
+button:hover { border-color: var(--path); }
+button:focus-visible { outline: 2px solid var(--path); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">ζ(½ + <i>it</i>)</h1>
+  <div class="planes">
+    <figure>
+      <figcaption><span class="label">Input plane</span><span class="formula" id="sform">s = ½ + <i>it</i></span></figcaption>
+      <canvas id="inp" aria-label="Input plane: a point climbing the line Re(s) = ½, leaving a dot at each zero"></canvas>
+    </figure>
+    <figure>
+      <figcaption><span class="label">Output plane</span><span class="formula">ζ(s)</span></figcaption>
+      <canvas id="out" aria-label="Output plane: the curve traced by ζ(½ + it), passing through 0 at each zero"></canvas>
+    </figure>
+  </div>
+  <div class="bar">
+    <label class="readout" for="sigma">σ = <b id="sigval">½</b></label>
+    <input id="sigma" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="Real part σ">
+    <span class="readout" id="readout"></span>
+    <button id="pause" type="button">Pause</button>
+    <button id="restart" type="button">Restart</button>
+  </div>
+</main>
+<script>
+// ---- ζ(s) by Euler–Maclaurin summation ----
+const EM = [1/12, -1/720, 1/30240, -1/1209600, 1/47900160, -691/1307674368000, 1/74724249600];
+function zeta(sr, si) {
+  const N = Math.max(10, Math.ceil((Math.abs(si) + 20) / Math.PI));
+  let re = 0, im = 0;
+  for (let n = 1; n < N; n++) {
+    const l = Math.log(n), m = Math.exp(-sr * l), a = -si * l;
+    re += m * Math.cos(a); im += m * Math.sin(a);
+  }
+  const lN = Math.log(N), mA = Math.exp(-sr * lN), aA = -si * lN;
+  const Ar = mA * Math.cos(aA), Ai = mA * Math.sin(aA);
+  const nr = N * Ar, ni = N * Ai, dr = sr - 1, di = si, dd = dr * dr + di * di;
+  re += (nr * dr + ni * di) / dd; im += (ni * dr - nr * di) / dd;
+  re += Ar / 2; im += Ai / 2;
+  let Pr = sr, Pi = si, pw = 1 / N;
+  for (let k = 1; k <= EM.length; k++) {
+    if (k > 1) {
+      for (const j of [2 * k - 3, 2 * k - 2]) {
+        const xr = sr + j, r = Pr * xr - Pi * si; Pi = Pr * si + Pi * xr; Pr = r;
+      }
+      pw /= N * N;
+    }
+    re += EM[k - 1] * pw * (Pr * Ar - Pi * Ai);
+    im += EM[k - 1] * pw * (Pr * Ai + Pi * Ar);
+  }
+  return [re, im];
+}
+const theta = t => t / 2 * Math.log(t / (2 * Math.PI)) - t / 2 - Math.PI / 8 + 1 / (48 * t) + 7 / (5760 * t ** 3);
+function Zfn(t) { const [r, i] = zeta(0.5, t), th = theta(t); return Math.cos(th) * r - Math.sin(th) * i; }
+
+// ---- precompute the curve and the zeros ----
+const T_MAX = 100, DT = 0.01;
+let sigma = 0.5;
+let curve = [];
+function buildCurve() {
+  curve = [];
+  for (let k = 0; k * DT <= T_MAX + 1e-9; k++) {
+    const z = zeta(sigma, k * DT);
+    curve.push(Number.isFinite(z[0]) && Number.isFinite(z[1]) ? z : [1e6, 0]);
+  }
+}
+buildCurve();
+const criticalZeros = [];
+let zeros = criticalZeros;
+{
+  const zeros = criticalZeros;
+  let prev = Zfn(5);
+  for (let t = 5 + DT; t <= T_MAX; t += DT) {
+    const v = Zfn(t);
+    if (Math.sign(v) !== Math.sign(prev)) {
+      let a = t - DT, b = t, fa = Zfn(a);
+      for (let i = 0; i < 50; i++) { const m = (a + b) / 2, fm = Zfn(m); if (Math.sign(fm) === Math.sign(fa)) { a = m; fa = fm; } else b = m; }
+      zeros.push((a + b) / 2);
+    }
+    prev = v;
+  }
+}
+
+// ---- animation state ----
+const SPEED = 1.6;          // t-units per second
+const END_HOLD = 4;         // seconds to hold at the end before looping
+const FADE = 0.7, FLASH = 1.1;
+let tCur = 0, playing = true, last = null, endTimer = 0;
+const hitAt = [];           // wall-clock time each zero was reached (or undefined)
+let clock = 0;
+
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ---- canvas helpers ----
+const inp = document.getElementById('inp'), out = document.getElementById('out');
+function fit(c) {
+  const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); return [ctx, w, h];
+}
+function tokens() {
+  const s = getComputedStyle(document.documentElement), g = n => s.getPropertyValue(n).trim();
+  return { fg: g('--fg'), muted: g('--muted'), grid: g('--grid'), axis: g('--axis'), strip: g('--strip'), path: g('--path'), zero: g('--zero'), mono: g('--font-mono'), display: g('--font-display') };
+}
+
+// ---- input plane ----
+const T_WIN = 32; // visible height in t
+function drawInput(k) {
+  const [ctx, w, h] = fit(inp);
+  ctx.clearRect(0, 0, w, h);
+  const pad = { l: 40, r: 12, t: 12, b: 26 };
+  const sMin = -0.75, sMax = 2.0;
+  const tTop = Math.max(T_WIN, tCur + 3), tBot = tTop - T_WIN;
+  const X = s => pad.l + (s - sMin) / (sMax - sMin) * (w - pad.l - pad.r);
+  const Y = t => h - pad.b - (t - tBot) / T_WIN * (h - pad.t - pad.b);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(pad.l, pad.t, w - pad.l - pad.r, h - pad.t - pad.b); ctx.clip();
+  // critical strip
+  ctx.fillStyle = k.strip; ctx.fillRect(X(0), pad.t, X(1) - X(0), h - pad.t - pad.b);
+  // grid
+  ctx.strokeStyle = k.grid; ctx.lineWidth = 1;
+  for (let t = Math.ceil(tBot / 5) * 5; t <= tTop; t += 5) { ctx.beginPath(); ctx.moveTo(pad.l, Y(t)); ctx.lineTo(w - pad.r, Y(t)); ctx.stroke(); }
+  // axes: Re = 0 and Re = 1 edges, and the real axis if visible
+  ctx.strokeStyle = k.axis;
+  for (const s of [0, 1]) { ctx.beginPath(); ctx.moveTo(X(s), pad.t); ctx.lineTo(X(s), h - pad.b); ctx.stroke(); }
+  if (tBot <= 0) { ctx.beginPath(); ctx.moveTo(pad.l, Y(0)); ctx.lineTo(w - pad.r, Y(0)); ctx.stroke(); }
+  // critical line (dashed ahead, solid behind)
+  ctx.setLineDash([4, 5]); ctx.strokeStyle = k.axis;
+  ctx.beginPath(); ctx.moveTo(X(0.5), Y(sigma === 0.5 ? tCur : tBot)); ctx.lineTo(X(0.5), pad.t); ctx.stroke();
+  if (sigma !== 0.5) { ctx.beginPath(); ctx.moveTo(X(sigma), Y(tCur)); ctx.lineTo(X(sigma), pad.t); ctx.stroke(); }
+  ctx.setLineDash([]);
+  ctx.strokeStyle = k.path; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(X(sigma), Y(Math.max(0, tBot - 1))); ctx.lineTo(X(sigma), Y(tCur)); ctx.stroke();
+  // zeros
+  ctx.font = `13px ${k.mono}`; ctx.textBaseline = 'middle';
+  zeros.forEach((z, i) => {
+    if (hitAt[i] === undefined) return;
+    const a = reduce ? 1 : Math.min(1, (clock - hitAt[i]) / FADE);
+    const y = Y(z); if (y < pad.t - 10 || y > h) return;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = k.zero; ctx.beginPath(); ctx.arc(X(0.5), y, 5, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = k.fg; ctx.fillText(`t = ${z.toFixed(3)}`, X(0.5) + 12, y);
+    ctx.globalAlpha = 1;
+  });
+  // moving head
+  ctx.fillStyle = k.path; ctx.beginPath(); ctx.arc(X(sigma), Y(tCur), 5.5, 0, 2 * Math.PI); ctx.fill();
+  ctx.restore();
+  // axis labels
+  ctx.fillStyle = k.muted; ctx.font = `12px ${k.mono}`;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let t = Math.ceil(tBot / 10) * 10; t <= tTop; t += 10) { const y = Y(t); if (y > pad.t + 4 && y < h - pad.b + 1) ctx.fillText(String(t), pad.l - 6, y); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const [s, lab] of [[0, '0'], [0.5, '½'], [1, '1']]) ctx.fillText(lab, X(s), h - pad.b + 6);
+  ctx.textAlign = 'left';
+}
+
+// ---- output plane ----
+const VIEW = { xMin: -2.2, xMax: 5.0, yMin: -3.6, yMax: 3.6 };
+function drawOutput(k) {
+  const [ctx, w, h] = fit(out);
+  ctx.clearRect(0, 0, w, h);
+  const pad = 12;
+  const sx = (w - 2 * pad) / (VIEW.xMax - VIEW.xMin), sy = (h - 2 * pad) / (VIEW.yMax - VIEW.yMin), sc = Math.min(sx, sy);
+  const cx = w / 2 - (VIEW.xMin + VIEW.xMax) / 2 * sc, cy = h / 2 + (VIEW.yMin + VIEW.yMax) / 2 * sc;
+  const X = u => cx + u * sc, Y = v => cy - v * sc;
+  // grid
+  ctx.strokeStyle = k.grid; ctx.lineWidth = 1;
+  for (let u = Math.ceil(VIEW.xMin); u <= VIEW.xMax; u++) { ctx.beginPath(); ctx.moveTo(X(u), 0); ctx.lineTo(X(u), h); ctx.stroke(); }
+  for (let v = Math.ceil(VIEW.yMin); v <= VIEW.yMax; v++) { ctx.beginPath(); ctx.moveTo(0, Y(v)); ctx.lineTo(w, Y(v)); ctx.stroke(); }
+  ctx.strokeStyle = k.axis;
+  ctx.beginPath(); ctx.moveTo(0, Y(0)); ctx.lineTo(w, Y(0)); ctx.moveTo(X(0), 0); ctx.lineTo(X(0), h); ctx.stroke();
+  ctx.fillStyle = k.muted; ctx.font = `12px ${k.mono}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('0', X(0) + 5, Y(0) + 4);
+  for (const u of [-2, 2, 4]) ctx.fillText(String(u), X(u) + 3, Y(0) + 4);
+  for (const v of [-2, 2]) ctx.fillText(`${v}i`, X(0) + 5, Y(v) + 2);
+
+  // curve so far: faint full history, bright recent stretch
+  const n = Math.min(curve.length - 1, Math.floor(tCur / DT));
+  const RECENT = Math.round(6 / DT);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.strokeStyle = k.path; ctx.globalAlpha = 0.22; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i <= Math.max(0, n - RECENT); i++) { const [u, v] = curve[i]; i ? ctx.lineTo(X(u), Y(v)) : ctx.moveTo(X(u), Y(v)); }
+  ctx.stroke();
+  const start = Math.max(0, n - RECENT), STEP = 25;
+  for (let i = start; i < n; i += STEP) {
+    const j = Math.min(n, i + STEP);
+    ctx.globalAlpha = 0.25 + 0.75 * ((j - start) / Math.max(1, n - start));
+    ctx.lineWidth = 1.2 + 1.3 * ((j - start) / Math.max(1, n - start));
+    ctx.beginPath(); ctx.moveTo(X(curve[i][0]), Y(curve[i][1]));
+    for (let q = i + 1; q <= j; q++) ctx.lineTo(X(curve[q][0]), Y(curve[q][1]));
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // flash at the origin for recent hits
+  zeros.forEach((z, i) => {
+    if (hitAt[i] === undefined) return;
+    const age = clock - hitAt[i]; if (age > FLASH) return;
+    const p = age / FLASH, a = reduce ? (1 - p) : Math.sin(Math.PI * p);
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.fillStyle = k.zero; ctx.beginPath(); ctx.arc(X(0), Y(0), 7, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = k.zero; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(X(0), Y(0), 7 + (reduce ? 6 : 22 * p), 0, 2 * Math.PI); ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  // head
+  const [hu, hv] = zeta(sigma, tCur);
+  ctx.fillStyle = k.path; ctx.beginPath(); ctx.arc(X(hu), Y(hv), 5.5, 0, 2 * Math.PI); ctx.fill();
+  return [hu, hv];
+}
+
+// ---- loop ----
+const readout = document.getElementById('readout');
+function frame(now) {
+  if (last === null) last = now;
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  clock += dt;
+  if (playing) {
+    if (tCur < T_MAX) {
+      tCur = Math.min(T_MAX, tCur + SPEED * dt);
+      zeros.forEach((z, i) => { if (hitAt[i] === undefined && z <= tCur) hitAt[i] = clock; });
+    } else if ((endTimer += dt) > END_HOLD) reset();
+  }
+  const k = tokens();
+  drawInput(k);
+  const [u, v] = drawOutput(k);
+  if (tCur > 1) minDist = Math.min(minDist, Math.hypot(u, v));
+  const found = hitAt.filter(x => x !== undefined).length;
+  readout.innerHTML = `t = <b>${tCur.toFixed(2).padStart(6, ' ')}</b> &nbsp; ζ = <b>${u.toFixed(3).replace('-', '−')} ${v < 0 ? '−' : '+'} ${Math.abs(v).toFixed(3)}i</b> &nbsp; closest to 0: <b>${minDist.toFixed(3)}</b> &nbsp; zeros: <b>${found}</b>`;
+  requestAnimationFrame(frame);
+}
+let minDist = Infinity;
+function reset() { tCur = 0; endTimer = 0; hitAt.length = 0; minDist = Infinity; }
+const sigLabel = x => x === 0.5 ? '½' : x.toFixed(2);
+document.getElementById('sigma').addEventListener('input', e => {
+  sigma = Math.round(parseFloat(e.target.value) * 100) / 100;
+  zeros = sigma === 0.5 ? criticalZeros : [];
+  buildCurve(); reset();
+  const L = sigLabel(sigma);
+  document.getElementById('sigval').textContent = L;
+  document.getElementById('title').innerHTML = `ζ(${L} + <i>it</i>)`;
+  document.getElementById('sform').innerHTML = `s = ${L} + <i>it</i>`;
+});
+document.getElementById('pause').addEventListener('click', e => { playing = !playing; e.target.textContent = playing ? 'Pause' : 'Play'; });
+document.getElementById('restart').addEventListener('click', () => { reset(); playing = true; document.getElementById('pause').textContent = 'Pause'; });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
